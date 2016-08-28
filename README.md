@@ -3,23 +3,34 @@ Htcp is a command line utility to duplicate HTTP traffic. It can duplicate an HT
 and send it to as many servers as you need. Filters can be apply to select which answer
 must be returned to the client.
 
+This application is cross platform and should work at least on Windows, OSX and Linux.
+The usage is quite simple:
+
+```bash
+# htcp start listening on port 8080 and duplicate
+# all the incoming traffic to golang.org and example.com
+$ htcp --listen localhost:8080 golang.org example.com
+```
+
 ## Goal
-I work on REST applications and sometime I need to duplicate the traffic from one
-entry-point to two applications. Since I have faced this problem more than once,
-I have built this small tool.
+Htcp is meant to be simple and production ready. This is not a proxy or a very
+simple one. All it does is send an exact copy of the incoming traffic to the servers,
+and copy back a response.
+
+I use it on rest endpoint to duplicate the traffic to a test servers or multiple applications.
 
 ## Filters
 Htcp can filter by :
 
-- command : return response from the first server in the command line call
-- error : return the first answer with an invalid status code
-- ok : return the first answer with a valid status code
+- `command` : return response from the first server in the command line call
+- `first-ko` : return the first answer with an invalid status code
+- `first-ok` : return the first answer with a valid status code
 
 New filter can be added easily.
 
-## Concurrency
-Htcp is not concurrent at this time, but the next version is going to
-execute all the request concurrently to improve response time from the client.
-
-## Apache
-Explanation on how to connect Apache2 to htcp.
+## Improvement
+- make the requests concurrent
+- add timeout flag
+- add unit test
+- add command test
+- add benchmark

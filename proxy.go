@@ -1,42 +1,10 @@
 package main
 
 import (
-	"errors"
 	"io"
 	"log"
 	"net/http"
 )
-
-const (
-	// OrderInvalid represent an invalid or uninitialized OrderType
-	OrderInvalid OrderType = iota
-	// OrderCommand demands command line ordering
-	OrderCommand
-	// OrderOK demands status code ordering starting with valid status
-	OrderOK
-	// OrderError demands status code ordering starting with invalid status
-	OrderError
-)
-
-// ErrOrderTypeInvalid is return when trying to create an order type from an invalid string
-var ErrOrderTypeInvalid = errors.New("invalid OrderType")
-
-// OrderType describes all possible ordering for http answer.
-type OrderType int
-
-// NewOrderType create a new OrderType from a string.
-func NewOrderType(str string) (OrderType, error) {
-	valid := map[string]OrderType{
-		"command": OrderCommand,
-		"error":   OrderError,
-		"ok":      OrderOK,
-	}
-	t, ok := valid[str]
-	if !ok {
-		return OrderInvalid, ErrOrderTypeInvalid
-	}
-	return t, nil
-}
 
 // Proxy represents a ProxyServer.
 type Proxy struct {
@@ -54,10 +22,10 @@ func copyHeader(dst, src http.Header) {
 }
 
 func (p *Proxy) send(r *http.Request) ([]*http.Response, error) {
-	responses := make([]*http.Response, 0, len(p.Dest))
+	responses := make([]*http.Response, len(p.Dest))
 
 	cli := &http.Client{}
-	for _, d := range p.Dest {
+	for i, d := range p.Dest {
 		dst := d + r.URL.String()
 
 		log.Printf("sending request to: %s", dst)
@@ -65,21 +33,18 @@ func (p *Proxy) send(r *http.Request) ([]*http.Response, error) {
 		if err != nil {
 			return nil, err
 		}
+		copy.WithContext(r.Context())
 		resp, err := cli.Do(copy)
 		if err != nil {
 			return nil, err
 		}
 		log.Printf("got answer with code: %d", resp.StatusCode)
-		responses = append(responses, resp)
+		responses[i] = resp
 	}
 	return responses, nil
 }
 
-func (p *Proxy) orderCommand(responses []*http.Response) []*http.Response {
-	return responses
-}
-
-func (p *Proxy) orderError(responses []*http.Response) []*http.Response {
+func (p *Proxy) orderKO(responses []*http.Response) []*http.Response {
 	valid := make([]*http.Response, 0, len(responses))
 	invalid := make([]*http.Response, 0, len(responses))
 
@@ -96,7 +61,7 @@ outter_loop:
 	return append(invalid, valid...)
 }
 
-func (p *Proxy) orderOk(responses []*http.Response) []*http.Response {
+func (p *Proxy) orderOK(responses []*http.Response) []*http.Response {
 	valid := make([]*http.Response, 0, len(responses))
 	invalid := make([]*http.Response, 0, len(responses))
 
@@ -116,11 +81,11 @@ outter_loop:
 func (p *Proxy) order(responses []*http.Response) []*http.Response {
 	switch p.Order {
 	case OrderCommand:
-		return p.orderCommand(responses)
-	case OrderError:
-		return p.orderError(responses)
-	case OrderOK:
-		return p.orderOk(responses)
+		return responses
+	case OrderFirstKO:
+		return p.orderKO(responses)
+	case OrderFirstOK:
+		return p.orderOK(responses)
 	default:
 		return responses
 	}

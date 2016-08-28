@@ -29,8 +29,8 @@ func init() {
 	flag.StringVar(&flags.order, "order", "command", "order server response and return the first one.\n"+
 		"        Valid values are:\n"+
 		"            command    first server in the command\n"+
-		"            error      first response with unexpect status code\n"+
-		"            ok         first response with expected status code\n"+
+		"            first-ko   first response with unexpect status code\n"+
+		"            first-ko   first response with expected status code\n"+
 		"       ")
 	flag.StringVar(&flags.expects, "expect", "200 201 202 203 204", "valid http response code")
 	flag.StringVar(&flags.listen, "listen", "localhost:8080", "address to listen on")
@@ -73,11 +73,11 @@ func main() {
 	}
 	order, err := NewOrderType(flags.order)
 	if err != nil {
-		log.Fatal("invalid -order parameter")
+		log.Fatal("invalid -order value")
 	}
 	expects, err := parseStatusCodes(flags.expects)
 	if err != nil {
-		log.Fatal("invalid -expect parameter")
+		log.Fatal("invalid -expect value")
 	}
 	if !flags.verbose {
 		log.SetOutput(ioutil.Discard)
