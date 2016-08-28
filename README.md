@@ -17,7 +17,7 @@ Htcp can filter by :
 
 New filter can be added easily.
 
-## Concurent
+## Concurrency
 Htcp is not concurrent at this time, but the next version is going to
 execute all the request concurrently to improve response time from the client.
 
