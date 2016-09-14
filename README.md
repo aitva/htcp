@@ -3,7 +3,7 @@ Htcp is a command line utility to duplicate HTTP traffic. It can duplicate an HT
 and send it to as many servers as you need. Filters can be apply to select which answer
 must be returned to the client.
 
-This application is cross platform and should work at least on Windows, OSX and Linux.
+This application is cross platform and works on Windows, OSX and Linux.
 The usage is quite simple:
 
 ```bash
@@ -12,12 +12,15 @@ The usage is quite simple:
 $ htcp --listen localhost:8080 golang.org example.com
 ```
 
+## Status
+Htcp is under heavy development and must not be use in production.
+
 ## Goal
-Htcp is meant to be simple and production ready. This is not a proxy or a very
-simple one. All it does is send an exact copy of the incoming traffic to the servers,
+Htcp is meant to be simple and production ready. This is not a proxy,
+all it does is send an exact copy of the incoming traffic to multiple servers,
 and copy back a response.
 
-I use it on rest endpoint to duplicate the traffic to a test servers or multiple applications.
+I use it on rest endpoint to duplicate the traffic to a test servers or other applications.
 
 ## Filters
 Htcp can filter by :
