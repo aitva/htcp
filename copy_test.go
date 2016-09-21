@@ -8,16 +8,18 @@ import (
 	"testing"
 )
 
-const testCopyMsgA = "Hello Client From A!"
-const testCopyMsgB = "Hello Client From B!"
+var serverMessages = []string{
+	"Hello Client From A!",
+	"Hello Client From B!",
+}
 
-func makeTestCopyServerHandler(msg []byte) http.Handler {
+func makeCopyServerHandler(msg []byte) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(msg)
 	})
 }
 
-func makeTestCopyHandler(t *testing.T) Handler {
+func makeCopyHandler(t *testing.T) Handler {
 	return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 		c, ok := FromCopyContext(r.Context())
 		if !ok {
@@ -27,7 +29,7 @@ func makeTestCopyHandler(t *testing.T) Handler {
 			t.Fatalf("unexpected number of responses: %d", len(c.Responses))
 		}
 
-		for _, r := range c.Responses {
+		for i, r := range c.Responses {
 			if r.StatusCode != http.StatusOK {
 				t.Fatalf("unexpected status code: %d", r.StatusCode)
 			}
@@ -35,7 +37,7 @@ func makeTestCopyHandler(t *testing.T) Handler {
 			if err != nil {
 				t.Fatalf("fail to read server answer: %v", err)
 			}
-			if bytes.Equal(buf, []byte(testCopyMsgA)) {
+			if !bytes.Equal(buf, []byte(serverMessages[i])) {
 				t.Fatalf("unexpected answer from server: %s", string(buf))
 			}
 		}
@@ -44,10 +46,13 @@ func makeTestCopyHandler(t *testing.T) Handler {
 }
 
 func TestCopy(t *testing.T) {
-	tsa := httptest.NewServer(makeTestCopyServerHandler([]byte(testCopyMsgA)))
-	defer tsa.Close()
-	tsb := httptest.NewServer(makeTestCopyServerHandler([]byte(testCopyMsgB)))
-	defer tsb.Close()
+	servers := make([]*httptest.Server, len(serverMessages))
+	urls := make([]string, len(serverMessages))
+	for i, msg := range serverMessages {
+		servers[i] = httptest.NewServer(makeCopyServerHandler([]byte(msg)))
+		defer servers[i].Close()
+		urls[i] = servers[i].URL
+	}
 
 	req, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -55,13 +60,40 @@ func TestCopy(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 
-	c := NewCopyHandler(EmptyNext, []string{tsa.URL, tsb.URL})
+	c := NewCopyHandler(makeCopyHandler(t), urls)
 	code, err := c.ServeHTTP(rec, req)
 	if code != 0 || err != nil {
 		t.Fatalf("ServeHTTP returned code %d and error: %v", code, err)
 	}
 }
 
-// TODO: TestCopyHeader
+func makeCopyHeaderHandler(msg []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO: check received headers.
+		w.Write(msg)
+	})
+}
+
+func TestCopy_Header(t *testing.T) {
+	servers := make([]*httptest.Server, len(serverMessages))
+	urls := make([]string, len(serverMessages))
+	for i, msg := range serverMessages {
+		servers[i] = httptest.NewServer(makeCopyServerHandler([]byte(msg)))
+		defer servers[i].Close()
+		urls[i] = servers[i].URL
+	}
+
+	req, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("could not create HTTP request: %v", err)
+	}
+	rec := httptest.NewRecorder()
+
+	c := NewCopyHandler(EmptyNext, urls)
+	code, err := c.ServeHTTP(rec, req)
+	if code != 0 || err != nil {
+		t.Fatalf("ServeHTTP returned code %d and error: %v", code, err)
+	}
+}
 
 // TODO: TestCopyQuery

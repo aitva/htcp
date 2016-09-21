@@ -52,21 +52,29 @@ func FromCopyContext(ctx context.Context) (*CopyHandler, bool) {
 func (c *CopyHandler) SendCopy(r *http.Request) error {
 	responses := make([]*http.Response, len(c.Servers))
 
+	// Create a slice of io.ReadCloser with io.TeeReader.
+
 	cli := &http.Client{}
 	for i, d := range c.Servers {
 		dst := d + r.URL.String()
-
 		copy, err := http.NewRequest(r.Method, dst, r.Body)
 		if err != nil {
 			return err
 		}
-		copy.WithContext(r.Context())
+		for k, v := range r.Header {
+			for i := 0; i < len(v); i++ {
+				copy.Header.Set(k, v[i])
+			}
+		}
+		// TODO: copy request body.
+		copy = copy.WithContext(r.Context())
 		resp, err := cli.Do(copy)
 		if err != nil {
 			return err
 		}
 		responses[i] = resp
 	}
+
 	c.Responses = responses
 	return nil
 }
@@ -78,8 +86,7 @@ func (c *CopyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 	}
 
 	ctx := NewCopyContext(r.Context(), c)
-	r.WithContext(ctx)
-	code, err := c.handler.ServeHTTP(w, r)
+	code, err := c.handler.ServeHTTP(w, r.WithContext(ctx))
 
 	for _, resp := range c.Responses {
 		resp.Body.Close()
