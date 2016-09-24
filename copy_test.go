@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -67,9 +68,29 @@ func TestCopy(t *testing.T) {
 	}
 }
 
-func makeCopyHeaderHandler(msg []byte) http.Handler {
+var clientHeaders = map[string][]string{
+	"Content-Type":  {"text/plain"},
+	"Cache-Control": {"no-cache"},
+	"Cookie":        {"status=testing"},
+}
+
+func makeCopyHeaderHandler(t *testing.T, msg []byte) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: check received headers.
+		for n, recv := range r.Header {
+			sent, ok := clientHeaders[n]
+			if !ok {
+				t.Fatal("unexpected header:", n)
+				continue
+			}
+			if len(recv) != len(sent) {
+				t.Fatalf("unexpected header content: %v != %v", sent, recv)
+			}
+			for i := range recv {
+				if sent[i] != recv[i] {
+					t.Fatalf("unexpected header content: %v != %v", sent, recv)
+				}
+			}
+		}
 		w.Write(msg)
 	})
 }
@@ -78,7 +99,7 @@ func TestCopy_Header(t *testing.T) {
 	servers := make([]*httptest.Server, len(serverMessages))
 	urls := make([]string, len(serverMessages))
 	for i, msg := range serverMessages {
-		servers[i] = httptest.NewServer(makeCopyServerHandler([]byte(msg)))
+		servers[i] = httptest.NewServer(makeCopyHeaderHandler(t, []byte(msg)))
 		defer servers[i].Close()
 		urls[i] = servers[i].URL
 	}
@@ -86,6 +107,11 @@ func TestCopy_Header(t *testing.T) {
 	req, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
 		t.Fatalf("could not create HTTP request: %v", err)
+	}
+	for n, vv := range clientHeaders {
+		for _, v := range vv {
+			req.Header.Set(n, v)
+		}
 	}
 	rec := httptest.NewRecorder()
 
@@ -96,4 +122,68 @@ func TestCopy_Header(t *testing.T) {
 	}
 }
 
-// TODO: TestCopyQuery
+const boundary = "boundaryboundaryboundary"
+
+var clientData = []byte("--" + boundary + "\r\n" +
+	"Content-Disposition: form-data; name=\"artiste\"\r\n" +
+	"Content-Type: text/plain\r\n" +
+	"\r\n" +
+	"The B-52's" +
+	"\r\n--" + boundary + "\r\n" +
+	"Content-Disposition: form-data; name=\"friends\"\r\n" +
+	"Content-Type: application/json\r\n" +
+	"\r\n" +
+	`{
+    "artiste": "The B-52's",
+    "albums": [
+        {
+            "name": "Cosmic Things",
+            "date": 1989
+        },
+        {
+            "name": "B-52's",
+            "date": 1979
+        },
+    ]
+}` +
+	"\r\n--" + boundary + "--")
+
+func makeCopyBodyHandler(t *testing.T, msg []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal("fail to read client request:", err)
+		}
+		if bytes.Compare(data, clientData) != 0 {
+			t.Logf("got %q", data)
+			t.Logf("expect %q", clientData)
+			t.Fatal("unexpected data from client")
+		}
+		w.Write(msg)
+	})
+}
+
+func TestCopy_Body(t *testing.T) {
+	servers := make([]*httptest.Server, len(serverMessages))
+	urls := make([]string, len(serverMessages))
+	for i, msg := range serverMessages {
+		servers[i] = httptest.NewServer(makeCopyBodyHandler(t, []byte(msg)))
+		defer servers[i].Close()
+		urls[i] = servers[i].URL
+	}
+
+	req, err := http.NewRequest("POST", "/", bytes.NewReader(clientData))
+	if err != nil {
+		t.Fatalf("could not create HTTP request: %v", err)
+	}
+	req.Header.Set("Content-Type", "mutlipart/form-data")
+	req.Header.Set("Content-Type", "boundary="+boundary)
+	req.Header.Set("Content-Length", strconv.Itoa(len(clientData)))
+	rec := httptest.NewRecorder()
+
+	c := NewCopyHandler(EmptyNext, urls)
+	code, err := c.ServeHTTP(rec, req)
+	if code != 0 || err != nil {
+		t.Fatalf("ServeHTTP returned code %d and error: %v", code, err)
+	}
+}

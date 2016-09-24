@@ -52,15 +52,29 @@ func FromCopyContext(ctx context.Context) (*CopyHandler, bool) {
 func (c *CopyHandler) SendCopy(r *http.Request) error {
 	responses := make([]*http.Response, len(c.Servers))
 
-	// Create a slice of io.ReadCloser with io.TeeReader.
+	// TODO: create a slice of io.ReadCloser with io.TeeReader.
+	//bodies := make([]io.ReadCloser, len(c.Servers))
+	//bodies[0] = r.Body
+	//for i := 1; i < len(bodies); i++ {
+	//	r, w := io.Pipe()
+	//	t := io.TeeReader(r, w)
+	//	bodies[i] = ioutil.NopCloser(t)
+	//}
 
 	cli := &http.Client{}
+	// Remove Accept-Encoding from http.Request.
+	// TODO: add timeout.
+	cli.Transport = &http.Transport{
+		DisableCompression: true,
+	}
 	for i, d := range c.Servers {
 		dst := d + r.URL.String()
 		copy, err := http.NewRequest(r.Method, dst, r.Body)
 		if err != nil {
 			return err
 		}
+		// Remove Go's 'User-Agent' from http.Request.
+		r.Header.Set("User-Agent", "")
 		for k, v := range r.Header {
 			for i := 0; i < len(v); i++ {
 				copy.Header.Set(k, v[i])
