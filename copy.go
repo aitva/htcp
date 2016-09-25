@@ -1,10 +1,16 @@
 package htcp
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"sync"
 )
+
+type copyContextKey int
+
+var myCopyContextKey = 0
 
 func copyResponse(w http.ResponseWriter, r *http.Response) (int64, error) {
 	h := w.Header()
@@ -18,9 +24,75 @@ func copyResponse(w http.ResponseWriter, r *http.Response) (int64, error) {
 	return io.Copy(w, r.Body)
 }
 
-type copyContextKey int
+// cReader is a concurent copy reader, every byte read from the reader is
+// duplicated to all the copies. This is a io.TeeReader with multiple writers
+// and a sync.Mutex.
+type cReader struct {
+	sync.RWMutex
+	r io.ReadCloser
+	w []io.Writer
+}
 
-var myCopyContextKey = 0
+func (c *cReader) Read(p []byte) (n int, err error) {
+	n, err = c.r.Read(p)
+	if n <= 0 {
+		return
+	}
+
+	c.Lock()
+	defer c.Unlock()
+
+	for _, w := range c.w {
+		n, err = w.Write(p[:n])
+		if err != nil {
+			return n, err
+		}
+	}
+	return
+}
+
+func (c *cReader) Close() error {
+	return c.r.Close()
+}
+
+// Copy creates a new ReadCloser synchronized with cReader.
+func (c *cReader) Copy() io.ReadCloser {
+	buf := &cBufReader{
+		Locker: c.RWMutex.RLocker(),
+	}
+	c.w = append(c.w, buf)
+	return buf
+}
+
+// cBufReader is simply a buffer with a lock.
+type cBufReader struct {
+	sync.Locker
+	bytes.Buffer
+}
+
+func (c *cBufReader) Read(p []byte) (n int, err error) {
+	c.Lock()
+	n, err = c.Buffer.Read(p)
+	c.Unlock()
+	return
+}
+
+func (c *cBufReader) Close() error {
+	return nil
+}
+
+func makeReadCloserSlice(body io.ReadCloser, n int) []io.ReadCloser {
+	readers := make([]io.ReadCloser, n)
+	if body == nil {
+		return readers
+	}
+	cr := &cReader{r: body}
+	readers[0] = cr
+	for i := 1; i < len(readers); i++ {
+		readers[i] = cr.Copy()
+	}
+	return readers
+}
 
 // CopyHandler is an HTTP midleware handling request duplication.
 type CopyHandler struct {
@@ -51,16 +123,7 @@ func FromCopyContext(ctx context.Context) (*CopyHandler, bool) {
 // SendCopy duplicate a request to the servers.
 func (c *CopyHandler) SendCopy(r *http.Request) error {
 	responses := make([]*http.Response, len(c.Servers))
-
-	// TODO: create a slice of io.ReadCloser with io.TeeReader.
-	//bodies := make([]io.ReadCloser, len(c.Servers))
-	//bodies[0] = r.Body
-	//for i := 1; i < len(bodies); i++ {
-	//	r, w := io.Pipe()
-	//	t := io.TeeReader(r, w)
-	//	bodies[i] = ioutil.NopCloser(t)
-	//}
-
+	readers := makeReadCloserSlice(r.Body, len(c.Servers))
 	cli := &http.Client{}
 	// Remove Accept-Encoding from http.Request.
 	// TODO: add timeout.
@@ -69,7 +132,7 @@ func (c *CopyHandler) SendCopy(r *http.Request) error {
 	}
 	for i, d := range c.Servers {
 		dst := d + r.URL.String()
-		copy, err := http.NewRequest(r.Method, dst, r.Body)
+		copy, err := http.NewRequest(r.Method, dst, readers[i])
 		if err != nil {
 			return err
 		}
@@ -80,7 +143,7 @@ func (c *CopyHandler) SendCopy(r *http.Request) error {
 				copy.Header.Set(k, v[i])
 			}
 		}
-		// TODO: copy request body.
+
 		copy = copy.WithContext(r.Context())
 		resp, err := cli.Do(copy)
 		if err != nil {
