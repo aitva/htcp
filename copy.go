@@ -12,18 +12,6 @@ type copyContextKey int
 
 var myCopyContextKey = 0
 
-func copyResponse(w http.ResponseWriter, r *http.Response) (int64, error) {
-	h := w.Header()
-	// Copy Headers.
-	for k, vv := range r.Header {
-		for _, v := range vv {
-			h.Add(k, v)
-		}
-	}
-	w.WriteHeader(r.StatusCode)
-	return io.Copy(w, r.Body)
-}
-
 // cReader is a concurent copy reader, every byte read from the reader is
 // duplicated to all the copies. This is a io.TeeReader with multiple writers
 // and a sync.Mutex.

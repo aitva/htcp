@@ -15,6 +15,11 @@ $ htcp --listen localhost:8080 golang.org example.com
 ## Status
 Htcp is under heavy development and must not be use in production.
 
+|    Date    |                     Change                     |
+|------------|------------------------------------------------|
+| 2016/08/26 | Complete library rewrite & update fcgi client. |
+
+
 ## Goal
 Htcp is meant to be simple and production ready. This is not a proxy,
 all it does is send an exact copy of the incoming traffic to multiple servers,
@@ -33,6 +38,7 @@ New filter can be added easily.
 
 ## Improvement
 - make the requests concurrent
+- reuse http.Client & http.Transport
 - add timeout flag
 - add unit test
 - add command test
