@@ -18,6 +18,7 @@ Htcp is under heavy development and must not be use in production.
 |    Date    |                     Change                     |
 |------------|------------------------------------------------|
 | 2016/08/26 | Complete library rewrite & update fcgi client. |
+| 2016/10/22 | Add unit test and refactor.                    |
 
 
 ## Goal
@@ -25,7 +26,7 @@ Htcp is meant to be simple and production ready. This is not a proxy,
 all it does is send an exact copy of the incoming traffic to multiple servers,
 and copy back a response.
 
-I use it on rest endpoint to duplicate the traffic to a test servers or other applications.
+I use it on rest endpoint to duplicate the traffic to test server or other applications.
 
 ## Filters
 Htcp can filter by :
@@ -40,6 +41,5 @@ New filter can be added easily.
 - make the requests concurrent
 - reuse http.Client & http.Transport
 - add timeout flag
-- add unit test
 - add command test
 - add benchmark
