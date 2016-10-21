@@ -12,25 +12,29 @@ type copyContextKey int
 
 var myCopyContextKey = 0
 
-// cReader is a concurent copy reader, every byte read from the reader is
-// duplicated to all the copies. This is a io.TeeReader with multiple writers
-// and a sync.Mutex.
-type cReader struct {
+// MultiReader is a concurent TeeReader, wich can duplicate
+// reads to as many reader as needed.
+type MultiReader struct {
 	sync.RWMutex
 	r io.ReadCloser
 	w []io.Writer
 }
 
-func (c *cReader) Read(p []byte) (n int, err error) {
-	n, err = c.r.Read(p)
+// NewMultiReader instanciate a new MultiReader.
+func NewMultiReader(r io.ReadCloser) *MultiReader {
+	return &MultiReader{r: r}
+}
+
+func (m *MultiReader) Read(p []byte) (n int, err error) {
+	n, err = m.r.Read(p)
 	if n <= 0 {
 		return
 	}
 
-	c.Lock()
-	defer c.Unlock()
+	m.Lock()
+	defer m.Unlock()
 
-	for _, w := range c.w {
+	for _, w := range m.w {
 		n, err = w.Write(p[:n])
 		if err != nil {
 			return n, err
@@ -39,33 +43,34 @@ func (c *cReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-func (c *cReader) Close() error {
-	return c.r.Close()
+// Close close the underlying ReadCloser.
+func (m *MultiReader) Close() error {
+	return m.r.Close()
 }
 
-// Copy creates a new ReadCloser synchronized with cReader.
-func (c *cReader) Copy() io.ReadCloser {
-	buf := &cBufReader{
-		Locker: c.RWMutex.RLocker(),
+// Copy creates a new ReadCloser synchronized with a MultiReader.
+func (m *MultiReader) Copy() io.ReadCloser {
+	buf := &bufReader{
+		Locker: m.RWMutex.RLocker(),
 	}
-	c.w = append(c.w, buf)
+	m.w = append(m.w, buf)
 	return buf
 }
 
 // cBufReader is simply a buffer with a lock.
-type cBufReader struct {
+type bufReader struct {
 	sync.Locker
 	bytes.Buffer
 }
 
-func (c *cBufReader) Read(p []byte) (n int, err error) {
-	c.Lock()
-	n, err = c.Buffer.Read(p)
-	c.Unlock()
+func (b *bufReader) Read(p []byte) (n int, err error) {
+	b.Lock()
+	n, err = b.Buffer.Read(p)
+	b.Unlock()
 	return
 }
 
-func (c *cBufReader) Close() error {
+func (b *bufReader) Close() error {
 	return nil
 }
 
@@ -74,7 +79,7 @@ func makeReadCloserSlice(body io.ReadCloser, n int) []io.ReadCloser {
 	if body == nil {
 		return readers
 	}
-	cr := &cReader{r: body}
+	cr := NewMultiReader(body)
 	readers[0] = cr
 	for i := 1; i < len(readers); i++ {
 		readers[i] = cr.Copy()

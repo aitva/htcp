@@ -29,10 +29,10 @@ var flags = struct {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [flags] server1.org server2.com [...]\n\n"+
-		"    A command to duplicate HTTP request to multiple server.\n"+
+		"    A command to duplicate HTTP request.\n"+
 		"    \n"+
 		"    The response returned is from the first server in the command line.\n"+
-		"    But another response can be selected using the -order flag.\n"+
+		"    But responses can be ordered using the -order flag.\n"+
 		"\n",
 		os.Args[0])
 	fmt.Fprintf(os.Stderr, "Flags:\n")
@@ -45,8 +45,7 @@ func init() {
 	flag.BoolVar(&flags.verbose, "verbose", false, "print verbose output on stdout")
 	flag.BoolVar(&flags.version, "version", false, "display command version")
 	flag.BoolVar(&flags.help, "help", false, "display the usage")
-	flag.StringVar(&flags.order, "order", "command", "order server response and return the first one.\n"+
-		"        Valid values are:\n"+
+	flag.StringVar(&flags.order, "order", "command", "order responses using one of the following filter:\n"+
 		"            command    first server in the command\n"+
 		"            first-ko   first response with unexpect status code\n"+
 		"            first-ko   first response with expected status code\n"+
@@ -119,7 +118,7 @@ func main() {
 		usage()
 	}
 	if flags.version {
-		fmt.Fprintf(os.Stdout, "v%s\n", version)
+		fmt.Fprintf(os.Stdout, "htcp version %s\n", version)
 		os.Exit(0)
 	}
 	_, err := parseStatusCodes(flags.expects)
