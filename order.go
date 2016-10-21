@@ -26,7 +26,7 @@ type Order int
 func ParseOrder(str string) (Order, error) {
 	valid := map[string]Order{
 		"command":  OrderCommand,
-		"first-ko": OrderFirstOK,
+		"first-ko": OrderFirstKO,
 		"first-ok": OrderFirstOK,
 	}
 	t, ok := valid[str]
@@ -34,6 +34,19 @@ func ParseOrder(str string) (Order, error) {
 		return OrderInvalid, ErrOrderInvalid
 	}
 	return t, nil
+}
+
+func (o Order) String() string {
+	str := "invalid"
+	switch o {
+	case OrderCommand:
+		str = "command"
+	case OrderFirstKO:
+		str = "first-ok"
+	case OrderFirstOK:
+		str = "first-ko"
+	}
+	return str
 }
 
 // OrderHandler is an HTTP middleware handling response ordering.
@@ -61,9 +74,9 @@ func (o *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, e
 	case OrderCommand:
 		// Nothing to do.
 	case OrderFirstOK:
-		copy.Responses = o.OrderOK(copy.Responses)
+		copy.Responses = o.OrderFirstOK(copy.Responses)
 	case OrderFirstKO:
-		copy.Responses = o.OrderKO(copy.Responses)
+		copy.Responses = o.OrderFirstKO(copy.Responses)
 	default:
 		return 500, errors.New("invalid order request")
 	}
@@ -87,16 +100,16 @@ outter_loop:
 	return valid, invalid
 }
 
-// OrderKO order http.Response by status code. It puts the requests
+// OrderFirstKO order http.Response by status code. It puts the requests
 // with a code outside OrderHandler.CodeOK first in the returned slice.
-func (o *OrderHandler) OrderKO(responses []*http.Response) []*http.Response {
+func (o *OrderHandler) OrderFirstKO(responses []*http.Response) []*http.Response {
 	valid, invalid := o.sortByCode(responses)
 	return append(invalid, valid...)
 }
 
-// OrderOK order http.Response by status code. It puts the requests
+// OrderFirstOK order http.Response by status code. It puts the requests
 // with a code inside OrderHandler.CodeOK first in the returned slice.
-func (o *OrderHandler) OrderOK(responses []*http.Response) []*http.Response {
+func (o *OrderHandler) OrderFirstOK(responses []*http.Response) []*http.Response {
 	valid, invalid := o.sortByCode(responses)
 	return append(valid, invalid...)
 }
