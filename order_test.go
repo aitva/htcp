@@ -76,7 +76,7 @@ func TestOrderCommand(t *testing.T) {
 
 	cp := &CopyHandler{}
 	cp.Responses = fakeResponses
-	ctx := NewCopyContext(context.Background(), cp)
+	ctx := newCopyContext(context.Background(), cp)
 
 	req, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -108,7 +108,7 @@ func TestOrderFirstKO(t *testing.T) {
 
 	cp := &CopyHandler{}
 	cp.Responses = fakeResponses
-	ctx := NewCopyContext(context.Background(), cp)
+	ctx := newCopyContext(context.Background(), cp)
 
 	req, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -138,7 +138,7 @@ func TestOrderFirstOK(t *testing.T) {
 
 	cp := &CopyHandler{}
 	cp.Responses = fakeResponses
-	ctx := NewCopyContext(context.Background(), cp)
+	ctx := newCopyContext(context.Background(), cp)
 
 	req, err := http.NewRequest("GET", "/", nil)
 	if err != nil {

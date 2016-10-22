@@ -12,20 +12,31 @@ type copyContextKey int
 
 var myCopyContextKey = 0
 
-// MultiReader is a concurent TeeReader, wich can duplicate
+// newCopyContext returns a new Context that carries a CopyHandler.
+func newCopyContext(ctx context.Context, c *CopyHandler) context.Context {
+	return context.WithValue(ctx, myCopyContextKey, c)
+}
+
+// FromCopyContext returns the CopyHandler stored in ctx, if any.
+func FromCopyContext(ctx context.Context) (*CopyHandler, bool) {
+	c, ok := ctx.Value(myCopyContextKey).(*CopyHandler)
+	return c, ok
+}
+
+// multiReader is a concurent TeeReader, wich can duplicate
 // reads to as many reader as needed.
-type MultiReader struct {
+type multiReader struct {
 	sync.RWMutex
 	r io.ReadCloser
 	w []io.Writer
 }
 
-// NewMultiReader instanciate a new MultiReader.
-func NewMultiReader(r io.ReadCloser) *MultiReader {
-	return &MultiReader{r: r}
+// newMultiReader instanciate a new multiReader.
+func newMultiReader(r io.ReadCloser) *multiReader {
+	return &multiReader{r: r}
 }
 
-func (m *MultiReader) Read(p []byte) (n int, err error) {
+func (m *multiReader) Read(p []byte) (n int, err error) {
 	n, err = m.r.Read(p)
 	if n <= 0 {
 		return
@@ -44,12 +55,12 @@ func (m *MultiReader) Read(p []byte) (n int, err error) {
 }
 
 // Close close the underlying ReadCloser.
-func (m *MultiReader) Close() error {
+func (m *multiReader) Close() error {
 	return m.r.Close()
 }
 
-// Copy creates a new ReadCloser synchronized with a MultiReader.
-func (m *MultiReader) Copy() io.ReadCloser {
+// Copy creates a new ReadCloser synchronized with a multiReader.
+func (m *multiReader) Copy() io.ReadCloser {
 	buf := &bufReader{
 		Locker: m.RWMutex.RLocker(),
 	}
@@ -57,7 +68,9 @@ func (m *MultiReader) Copy() io.ReadCloser {
 	return buf
 }
 
-// cBufReader is simply a buffer with a lock.
+// bufReader is a buffer with a lock.
+// The lock is linked to a multiReader and protect the buffer
+// from concurrent access.
 type bufReader struct {
 	sync.Locker
 	bytes.Buffer
@@ -79,7 +92,7 @@ func makeReadCloserSlice(body io.ReadCloser, n int) []io.ReadCloser {
 	if body == nil {
 		return readers
 	}
-	cr := NewMultiReader(body)
+	cr := newMultiReader(body)
 	readers[0] = cr
 	for i := 1; i < len(readers); i++ {
 		readers[i] = cr.Copy()
@@ -100,17 +113,6 @@ func NewCopyHandler(handler Handler, servers []string) *CopyHandler {
 		handler: handler,
 		Servers: servers,
 	}
-}
-
-// NewCopyContext returns a new Context that carries a CopyHandler.
-func NewCopyContext(ctx context.Context, c *CopyHandler) context.Context {
-	return context.WithValue(ctx, myCopyContextKey, c)
-}
-
-// FromCopyContext returns the CopyHandler stored in ctx, if any.
-func FromCopyContext(ctx context.Context) (*CopyHandler, bool) {
-	c, ok := ctx.Value(myCopyContextKey).(*CopyHandler)
-	return c, ok
 }
 
 // SendCopy duplicate a request to the servers.
@@ -155,7 +157,7 @@ func (c *CopyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 		return http.StatusInternalServerError, err
 	}
 
-	ctx := NewCopyContext(r.Context(), c)
+	ctx := newCopyContext(r.Context(), c)
 	code, err := c.handler.ServeHTTP(w, r.WithContext(ctx))
 
 	for _, resp := range c.Responses {
