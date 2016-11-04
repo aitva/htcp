@@ -31,8 +31,8 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [flags] server1.org server2.com [...]\n\n"+
 		"    A command to duplicate HTTP request.\n"+
 		"    \n"+
-		"    The response returned is from the first server in the command line.\n"+
-		"    But responses can be ordered using the -order flag.\n"+
+		"    The response returned is from the first server in the command line,\n"+
+		"    but responses can be ordered using the -order flag.\n"+
 		"\n",
 		os.Args[0])
 	fmt.Fprintf(os.Stderr, "Flags:\n")
@@ -46,11 +46,11 @@ func init() {
 	flag.BoolVar(&flags.version, "version", false, "display command version")
 	flag.BoolVar(&flags.help, "help", false, "display the usage")
 	flag.StringVar(&flags.order, "order", "command", "order responses using one of the following filter:\n"+
-		"            command    first server in the command\n"+
+		"            command    first server in the command line call\n"+
 		"            first-ko   first response with unexpect status code\n"+
 		"            first-ko   first response with expected status code\n"+
 		"       ")
-	flag.StringVar(&flags.expects, "expect", "200 201 202 203 204", "valid http response code")
+	flag.StringVar(&flags.expects, "expects", "200 201 202 203 204", "valid http response code")
 	flag.StringVar(&flags.listen, "listen", "localhost:8080", "address to listen on")
 }
 

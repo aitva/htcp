@@ -4,7 +4,7 @@ and send it to as many servers as you need. Filters can be apply to select which
 must be returned to the client.
 
 This application is cross platform and works on Windows, OSX and Linux.
-The usage is quite simple:
+The usage is simple:
 
 ```bash
 # htcp start listening on port 8080 and duplicate
@@ -19,6 +19,7 @@ Htcp is under heavy development and must not be use in production.
 |------------|------------------------------------------------|
 | 2016/08/26 | Complete library rewrite & update fcgi client. |
 | 2016/10/22 | Add unit test and refactor.                    |
+| 2016/11/04 | Concurrent requests and http.Client reuse.     |
 
 
 ## Goal
@@ -38,8 +39,6 @@ Htcp can filter by :
 New filter can be added easily.
 
 ## Improvement
-- make the requests concurrent
-- reuse http.Client & http.Transport
 - add timeout flag
 - add command test
 - add benchmark
