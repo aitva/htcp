@@ -5,7 +5,8 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type copyContextKey int
@@ -23,85 +24,20 @@ func FromCopyContext(ctx context.Context) (*CopyHandler, bool) {
 	return c, ok
 }
 
-// multiReader is a concurent TeeReader, wich can duplicate
-// reads to as many reader as needed.
-type multiReader struct {
-	sync.RWMutex
-	r io.ReadCloser
-	w []io.Writer
-}
-
-// newMultiReader instanciate a new multiReader.
-func newMultiReader(r io.ReadCloser) *multiReader {
-	return &multiReader{r: r}
-}
-
-func (m *multiReader) Read(p []byte) (n int, err error) {
-	n, err = m.r.Read(p)
-	if n <= 0 {
-		return
+func makeBufferSlices(n int) (readers []*bytes.Buffer, writers []io.Writer) {
+	buffers := make([]bytes.Buffer, n)
+	readers = make([]*bytes.Buffer, n)
+	writers = make([]io.Writer, n)
+	for i := range buffers {
+		readers[i] = &buffers[i]
+		writers[i] = &buffers[i]
 	}
-
-	m.Lock()
-	defer m.Unlock()
-
-	for _, w := range m.w {
-		n, err = w.Write(p[:n])
-		if err != nil {
-			return n, err
-		}
-	}
-	return
-}
-
-// Close close the underlying ReadCloser.
-func (m *multiReader) Close() error {
-	return m.r.Close()
-}
-
-// Copy creates a new ReadCloser synchronized with a multiReader.
-func (m *multiReader) Copy() io.ReadCloser {
-	buf := &bufReader{
-		Locker: m.RWMutex.RLocker(),
-	}
-	m.w = append(m.w, buf)
-	return buf
-}
-
-// bufReader is a buffer with a lock.
-// The lock is linked to a multiReader and protect the buffer
-// from concurrent access.
-type bufReader struct {
-	sync.Locker
-	bytes.Buffer
-}
-
-func (b *bufReader) Read(p []byte) (n int, err error) {
-	b.Lock()
-	n, err = b.Buffer.Read(p)
-	b.Unlock()
-	return
-}
-
-func (b *bufReader) Close() error {
-	return nil
-}
-
-func makeReadCloserSlice(body io.ReadCloser, n int) []io.ReadCloser {
-	readers := make([]io.ReadCloser, n)
-	if body == nil {
-		return readers
-	}
-	cr := newMultiReader(body)
-	readers[0] = cr
-	for i := 1; i < len(readers); i++ {
-		readers[i] = cr.Copy()
-	}
-	return readers
+	return readers, writers
 }
 
 // CopyHandler is an HTTP midleware handling request duplication.
 type CopyHandler struct {
+	client    *http.Client
 	handler   Handler
 	Servers   []string
 	Responses []*http.Response
@@ -109,22 +45,30 @@ type CopyHandler struct {
 
 // NewCopyHandler creates a new CopyHandler.
 func NewCopyHandler(handler Handler, servers []string) *CopyHandler {
-	return &CopyHandler{
-		handler: handler,
-		Servers: servers,
-	}
-}
-
-// SendCopy duplicate a request to the servers.
-func (c *CopyHandler) SendCopy(r *http.Request) error {
-	responses := make([]*http.Response, len(c.Servers))
-	readers := makeReadCloserSlice(r.Body, len(c.Servers))
+	// Declaring a client here enable connection reuse.
 	cli := &http.Client{}
 	// Remove Accept-Encoding from http.Request.
 	// TODO: add timeout.
 	cli.Transport = &http.Transport{
 		DisableCompression: true,
 	}
+	return &CopyHandler{
+		client:  cli,
+		handler: handler,
+		Servers: servers,
+	}
+}
+
+// SendCopies duplicate a request to the servers.
+func (c *CopyHandler) SendCopies(r *http.Request) error {
+	var g errgroup.Group
+	responses := make([]*http.Response, len(c.Servers))
+	readers, writers := makeBufferSlices(len(c.Servers))
+
+	if r.Body != nil {
+		io.Copy(io.MultiWriter(writers...), r.Body)
+	}
+
 	for i, d := range c.Servers {
 		dst := d + r.URL.String()
 		copy, err := http.NewRequest(r.Method, dst, readers[i])
@@ -139,20 +83,24 @@ func (c *CopyHandler) SendCopy(r *http.Request) error {
 			}
 		}
 
-		copy = copy.WithContext(r.Context())
-		resp, err := cli.Do(copy)
-		if err != nil {
+		rq := copy.WithContext(r.Context())
+		i := i
+		g.Go(func() error {
+			resp, err := c.client.Do(rq)
+			if err == nil {
+				responses[i] = resp
+			}
 			return err
-		}
-		responses[i] = resp
+		})
 	}
 
+	err := g.Wait()
 	c.Responses = responses
-	return nil
+	return err
 }
 
 func (c *CopyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	err := c.SendCopy(r)
+	err := c.SendCopies(r)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -161,7 +109,9 @@ func (c *CopyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 	code, err := c.handler.ServeHTTP(w, r.WithContext(ctx))
 
 	for _, resp := range c.Responses {
-		resp.Body.Close()
+		if resp != nil {
+			resp.Body.Close()
+		}
 	}
 	return code, err
 }
