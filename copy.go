@@ -11,7 +11,7 @@ import (
 
 type copyContextKey int
 
-var myCopyContextKey = 0
+var myCopyContextKey copyContextKey
 
 // newCopyContext returns a new Context that carries a CopyHandler.
 func newCopyContext(ctx context.Context, c *CopyHandler) context.Context {
