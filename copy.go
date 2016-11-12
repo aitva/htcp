@@ -59,7 +59,8 @@ func NewCopyHandler(handler Handler, servers []string) *CopyHandler {
 	}
 }
 
-// SendCopies duplicate a request to the servers.
+// SendCopies duplicate a request to multiple servers.
+// The requests are sent concurrently.
 func (c *CopyHandler) SendCopies(r *http.Request) error {
 	var g errgroup.Group
 	responses := make([]*http.Response, len(c.Servers))
@@ -99,10 +100,13 @@ func (c *CopyHandler) SendCopies(r *http.Request) error {
 	return err
 }
 
+// ServeHTTP calls CopyHandler.SendCopy.
+// If an error occurs, it returns a code 521 (Web Server Is Down)
+// and an error message.
 func (c *CopyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	err := c.SendCopies(r)
 	if err != nil {
-		return http.StatusInternalServerError, err
+		return 521, err
 	}
 
 	ctx := newCopyContext(r.Context(), c)

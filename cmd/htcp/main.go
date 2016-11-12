@@ -18,12 +18,12 @@ import (
 
 var version = "0.01.00"
 
-var flags = struct {
+var args = struct {
 	verbose bool
 	version bool
 	help    bool
 	listen  string
-	order   string
+	order   Order
 	expects string
 }{}
 
@@ -42,16 +42,15 @@ func usage() {
 
 func init() {
 	flag.Usage = usage
-	flag.BoolVar(&flags.verbose, "verbose", false, "print verbose output on stdout")
-	flag.BoolVar(&flags.version, "version", false, "display command version")
-	flag.BoolVar(&flags.help, "help", false, "display the usage")
-	flag.StringVar(&flags.order, "order", "command", "order responses using one of the following filter:\n"+
+	flag.BoolVar(&args.verbose, "verbose", false, "print verbose output on stdout")
+	flag.BoolVar(&args.version, "version", false, "display command version")
+	flag.BoolVar(&args.help, "help", false, "display the usage")
+	flag.Var(&args.order, "order", "order responses using one of the following filter:\n"+
 		"            command    first server in the command line call\n"+
 		"            first-ko   first response with unexpect status code\n"+
-		"            first-ko   first response with expected status code\n"+
-		"       ")
-	flag.StringVar(&flags.expects, "expects", "200 201 202 203 204", "valid http response code")
-	flag.StringVar(&flags.listen, "listen", "localhost:8080", "address to listen on")
+		"            first-ko   first response with expected status code\n")
+	flag.StringVar(&args.expects, "expects", "200 201 202 203 204", "valid http response code")
+	flag.StringVar(&args.listen, "listen", "localhost:8080", "address to listen on")
 }
 
 func parseStatusCodes(str string) ([]int, error) {
@@ -79,17 +78,19 @@ func copyResponse(w http.ResponseWriter, r *http.Response) (int64, error) {
 	return io.Copy(w, r.Body)
 }
 
-func mainHandler(w http.ResponseWriter, r *http.Request) (int, error) {
-	copyHandler, ok := htcp.FromCopyContext(r.Context())
-	if !ok {
-		return 500, errors.New("fail to retrieve CopyHandler from context")
-	}
-	resp := copyHandler.Responses[0]
-	_, err := copyResponse(w, resp)
-	if err != nil {
-		return 0, err
-	}
-	return 0, nil
+func makeMainHandler(codeOK []int, o Order) htcp.HandlerFunc {
+	return htcp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+		copy, ok := htcp.FromCopyContext(r.Context())
+		if !ok {
+			return 500, errors.New("fail to retrieve CopyHandler from context")
+		}
+		resp := o.Sort(codeOK, copy.Responses)
+		_, err := copyResponse(w, resp[0])
+		if err != nil {
+			return 0, err
+		}
+		return 0, nil
+	})
 }
 
 func makeLogHandler(h htcp.Handler) http.Handler {
@@ -114,18 +115,18 @@ func makeLogHandler(h htcp.Handler) http.Handler {
 
 func main() {
 	flag.Parse()
-	if flags.help {
+	if args.help {
 		usage()
 	}
-	if flags.version {
+	if args.version {
 		fmt.Fprintf(os.Stdout, "htcp version %s\n", version)
 		os.Exit(0)
 	}
-	_, err := parseStatusCodes(flags.expects)
+	codeOK, err := parseStatusCodes(args.expects)
 	if err != nil {
 		log.Fatal("expect: invalid value")
 	}
-	if !flags.verbose {
+	if !args.verbose {
 		log.SetOutput(ioutil.Discard)
 	}
 	if flag.NArg() < 1 {
@@ -139,9 +140,10 @@ func main() {
 		}
 	}
 
-	copyHandler := htcp.NewCopyHandler(htcp.HandlerFunc(mainHandler), servers)
+	mainHandler := makeMainHandler(codeOK, args.order)
+	copyHandler := htcp.NewCopyHandler(mainHandler, servers)
 	logHandler := makeLogHandler(copyHandler)
 	http.Handle("/", logHandler)
-	log.Printf("server is listening on %s", flags.listen)
-	log.Fatal(http.ListenAndServe(flags.listen, nil))
+	log.Printf("server is listening on %s", args.listen)
+	log.Fatal(http.ListenAndServe(args.listen, nil))
 }
